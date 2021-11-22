@@ -1,5 +1,12 @@
 # colorizer.lua
 
+Merged the following PRs:
+
+* [Added Support for 0xAARRGGBB](https://github.com/norcalli/nvim-colorizer.lua/pull/58) 
+* [Fix parsing for RRGGBBAA hex codes](https://github.com/norcalli/nvim-colorizer.lua/pull/57) 
+* [using virtualtext as one option for highlight](https://github.com/norcalli/nvim-colorizer.lua/pull/55)
+* [Add sass variable matcher.](https://github.com/norcalli/nvim-colorizer.lua/pull/22) 
+
 [![luadoc](https://img.shields.io/badge/luadoc-0.1-blue)](https://norcalli.github.io/luadoc/nvim-colorizer.lua/modules/colorizer.html)
 
 A high-performance color highlighter for Neovim which has **no external dependencies**! Written in performant Luajit.
