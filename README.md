@@ -25,6 +25,7 @@ Which includes Linux, OSX, and Windows.
 
 One line setup. This will create an `autocmd` for `FileType *` to highlight
 every filetype.
+**NOTE**: You should add this line after/below where your plugins are setup.
 
 ```vim
 lua require'colorizer'.setup()
@@ -57,7 +58,7 @@ library to do custom highlighting themselves.
 	hsl_fn   = false;        -- CSS hsl() and hsla() functions
 	css      = false;        -- Enable all CSS features: rgb_fn, hsl_fn, names, RGB, RRGGBB
 	css_fn   = false;        -- Enable all CSS *functions*: rgb_fn, hsl_fn
-	-- Available modes: foreground, background
+	-- Available modes: foreground, background, virtualtext
 	mode     = 'background'; -- Set the display mode.
   }
 ```
@@ -132,6 +133,10 @@ Stop highlighting the current buffer (detach).
 Reload all buffers that are being highlighted with new settings from the setup
 settings (or the defaults). Shortcut for ColorizerAttachToBuffer on every
 buffer.
+
+|:ColorizerToggle|
+
+Toggle highlighting of the current buffer.
 ```
 
 

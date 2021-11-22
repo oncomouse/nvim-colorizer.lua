@@ -9,6 +9,7 @@ local nvim_buf_add_highlight = vim.api.nvim_buf_add_highlight
 local nvim_buf_clear_namespace = vim.api.nvim_buf_clear_namespace
 local nvim_buf_get_lines = vim.api.nvim_buf_get_lines
 local nvim_get_current_buf = vim.api.nvim_get_current_buf
+local nvim_buf_set_virtual_text = vim.api.nvim_buf_set_virtual_text
 local band, lshift, bor, tohex = bit.band, bit.lshift, bit.bor, bit.tohex
 local rshift = bit.rshift
 local floor, min, max = math.floor, math.min, math.max
@@ -55,16 +56,17 @@ local function merge(...)
 end
 
 local DEFAULT_OPTIONS = {
-	RGB      = true;         -- #RGB hex codes
-	RRGGBB   = true;         -- #RRGGBB hex codes
-	names    = true;         -- "Name" codes like Blue
-	RRGGBBAA = false;        -- #RRGGBBAA hex codes
-	rgb_fn   = false;        -- CSS rgb() and rgba() functions
-	hsl_fn   = false;        -- CSS hsl() and hsla() functions
-	css      = false;        -- Enable all CSS features: rgb_fn, hsl_fn, names, RGB, RRGGBB
-	css_fn   = false;        -- Enable all CSS *functions*: rgb_fn, hsl_fn
-	-- Available modes: foreground, background
-	mode     = 'background'; -- Set the display mode.
+	RGB			 = true;				 -- #RGB hex codes
+	RRGGBB	 = true;				 -- #RRGGBB hex codes
+	names		 = true;				 -- "Name" codes like Blue
+	RRGGBBAA = false;				 -- #RRGGBBAA hex codes
+	rgb_fn	 = false;				 -- CSS rgb() and rgba() functions
+	hsl_fn	 = false;				 -- CSS hsl() and hsla() functions
+	css			 = false;				 -- Enable all CSS features: rgb_fn, hsl_fn, names, RGB, RRGGBB
+	css_fn	 = false;				 -- Enable all CSS *functions*: rgb_fn, hsl_fn
+	-- Available modes: foreground, background, sign, virtualtext
+	mode		 = 'background'; -- Set the display mode.
+	virtualtext = '■';
 }
 
 -- -- TODO use rgb as the return value from the matcher functions
@@ -79,9 +81,9 @@ local DEFAULT_OPTIONS = {
 -- Create a lookup table where the bottom 4 bits are used to indicate the
 -- category and the top 4 bits are the hex value of the ASCII byte.
 local BYTE_CATEGORY = ffi.new 'uint8_t[256]'
-local CATEGORY_DIGIT    = lshift(1, 0);
-local CATEGORY_ALPHA    = lshift(1, 1);
-local CATEGORY_HEX      = lshift(1, 2);
+local CATEGORY_DIGIT		= lshift(1, 0);
+local CATEGORY_ALPHA		= lshift(1, 1);
+local CATEGORY_HEX			= lshift(1, 2);
 local CATEGORY_ALPHANUM = bor(CATEGORY_ALPHA, CATEGORY_DIGIT)
 do
 	local b = string.byte
@@ -217,13 +219,42 @@ local function rgb_hex_parser(line, i, minlen, maxlen)
 	if length ~= 4 and length ~= 7 and length ~= 9 then return end
 	if alpha then
 		alpha = tonumber(alpha)/255
-		local r = floor(band(v, 0xFF)*alpha)
+		local r = floor(band(rshift(v, 16), 0xFF)*alpha)
 		local g = floor(band(rshift(v, 8), 0xFF)*alpha)
-		local b = floor(band(rshift(v, 16), 0xFF)*alpha)
+		local b = floor(band(v, 0xFF)*alpha)
 		v = bor(lshift(r, 16), lshift(g, 8), b)
 		return 9, tohex(v, 6)
 	end
 	return length, line:sub(i+1, i+length-1)
+end
+
+local rgb_fn = function(line,i)
+        local j = i + 2
+        if #line < 10 then return end
+        local n = j + 8
+        local alpha
+        local v = 0
+        while j <= min(n, #line) do
+            local b = line:byte(j)
+            if not byte_is_hex(b) then break end
+            if j - i <= 3  then
+                alpha = parse_hex(b) + lshift(alpha or 0, 4)
+            else
+                v = parse_hex(b) + lshift(v, 4)
+            end
+            j = j + 1
+        end
+        if #line >= j and byte_is_alphanumeric(line:byte(j)) then
+            return
+        end
+        local length = j - i
+        if length ~= 10 then return end
+        alpha = tonumber(alpha)/255
+        local r = floor(band(rshift(v, 16), 0xFF)*alpha)
+        local g = floor(band(rshift(v, 8), 0xFF)*alpha)
+        local b = floor(band(v, 0xFF)*alpha)
+        v = bor(lshift(r, 16), lshift(g, 8), b)
+        return 10, tohex(v, 6)
 end
 
 -- TODO consider removing the regexes here
@@ -282,6 +313,15 @@ do
 		return match_end - 1, rgb_hex
 	end
 end
+
+local RGB_FUNCTION_TRIE = Trie {'0x'}
+local rgb_0x_parser= function(line, i)
+    local prefix = RGB_FUNCTION_TRIE:longest_prefix(line:sub(i))
+    if prefix then
+        return rgb_fn(line, i)
+    end
+end
+
 local css_function_parser, rgb_function_parser, hsl_function_parser
 do
 	local CSS_FUNCTION_TRIE = Trie {'rgb', 'rgba', 'hsl', 'hsla'}
@@ -330,6 +370,7 @@ local HIGHLIGHT_NAME_PREFIX = "colorizer"
 local HIGHLIGHT_MODE_NAMES = {
 	background = "mb";
 	foreground = "mf";
+	virtualtext = "mt";
 }
 local HIGHLIGHT_CACHE = {}
 
@@ -376,19 +417,20 @@ end
 local MATCHER_CACHE = {}
 local function make_matcher(options)
 	local enable_names    = options.css or options.names
+	local enable_0x       = options.rgb_0x
 	local enable_RGB      = options.css or options.RGB
 	local enable_RRGGBB   = options.css or options.RRGGBB
 	local enable_RRGGBBAA = options.css or options.RRGGBBAA
-	local enable_rgb      = options.css or options.css_fns or options.rgb_fn
-	local enable_hsl      = options.css or options.css_fns or options.hsl_fn
+	local enable_rgb			= options.css or options.css_fns or options.rgb_fn
+	local enable_hsl			= options.css or options.css_fns or options.hsl_fn
 
 	local matcher_key = bor(
-		lshift(enable_names    and 1 or 0, 0),
-		lshift(enable_RGB      and 1 or 0, 1),
-		lshift(enable_RRGGBB   and 1 or 0, 2),
+		lshift(enable_names		 and 1 or 0, 0),
+		lshift(enable_RGB			 and 1 or 0, 1),
+		lshift(enable_RRGGBB	 and 1 or 0, 2),
 		lshift(enable_RRGGBBAA and 1 or 0, 3),
-		lshift(enable_rgb      and 1 or 0, 4),
-		lshift(enable_hsl      and 1 or 0, 5))
+		lshift(enable_rgb			 and 1 or 0, 4),
+		lshift(enable_hsl			 and 1 or 0, 5))
 
 	if matcher_key == 0 then return end
 
@@ -401,6 +443,9 @@ local function make_matcher(options)
 	if enable_names then
 		table.insert(loop_matchers, color_name_parser)
 	end
+    if enable_0x then
+        table.insert(loop_matchers, rgb_0x_parser)
+    end
 	do
 		local valid_lengths = {[3] = enable_RGB, [6] = enable_RRGGBB, [8] = enable_RRGGBBAA}
 		local minlen, maxlen
@@ -419,6 +464,7 @@ local function make_matcher(options)
 			end)
 		end
 	end
+
 	if enable_rgb and enable_hsl then
 		table.insert(loop_matchers, css_function_parser)
 	elseif enable_rgb then
@@ -429,6 +475,22 @@ local function make_matcher(options)
 	loop_parse_fn = compile_matcher(loop_matchers)
 	MATCHER_CACHE[matcher_key] = loop_parse_fn
 	return loop_parse_fn
+end
+
+local function add_highlight(options, buf, ns, data)
+	for linenr, hls in pairs(data) do
+		if vim.tbl_contains({'foreground', 'background'}, options.mode) then
+			for _, hl in ipairs(hls) do
+				nvim_buf_add_highlight(buf, ns, hl.name, linenr, hl.range[1], hl.range[2])
+			end
+		elseif options.mode == 'virtualtext' then
+			local chunks = {}
+			for _, hl in ipairs(hls) do
+				table.insert(chunks, {options.virtualtext, hl.name})
+			end
+			nvim_buf_set_virtual_text(buf, ns, linenr, chunks, {})
+		end
+	end
 end
 
 --[[-- Highlight the buffer region.
@@ -450,6 +512,8 @@ local function highlight_buffer(buf, ns, lines, line_start, options)
 	if options.custom_matcher then
 		loop_parse_fn = compile_matcher {loop_parse_fn, options.custom_matcher}
 	end
+	local data = {}
+	local mode = options.mode == 'background' and {mode='background'} or {mode='foreground'}
 	for current_linenum, line in ipairs(lines) do
 		current_linenum = current_linenum - 1 + line_start
 		-- Upvalues are options and current_linenum
@@ -457,14 +521,17 @@ local function highlight_buffer(buf, ns, lines, line_start, options)
 		while i < #line do
 			local length, rgb_hex = loop_parse_fn(line, i)
 			if length then
-				local highlight_name = create_highlight(rgb_hex, options)
-				nvim_buf_add_highlight(buf, ns, highlight_name, current_linenum, i-1, i+length-1)
+				local name = create_highlight(rgb_hex, mode)
+				local d = data[current_linenum] or {}
+				table.insert(d, {name=name, range={i-1, i+length-1}})
+				data[current_linenum] = d
 				i = i + length
 			else
 				i = i + 1
 			end
 		end
 	end
+	add_highlight(options, buf, ns, data)
 end
 
 ---
@@ -494,6 +561,16 @@ local function new_buffer_options(buf)
 	return FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
 end
 
+--- Check if attached to a buffer.
+-- @tparam[opt=0|nil] integer buf A value of 0 implies the current buffer.
+-- @return true if attached to the buffer, false otherwise.
+local function is_buffer_attached(buf)
+	if buf == 0 or buf == nil then
+		buf = nvim_get_current_buf()
+	end
+	return BUFFER_OPTIONS[buf] ~= nil
+end
+
 --- Attach to a buffer and continuously highlight changes.
 -- @tparam[opt=0|nil] integer buf A value of 0 implies the current buffer.
 -- @param[opt] options Configuration options as described in `setup`
@@ -520,7 +597,7 @@ local function attach_to_buffer(buf, options)
 				return true
 			end
 			nvim_buf_clear_namespace(buf, ns, firstline, new_lastline)
-			local lines = nvim_buf_get_lines(buf, firstline, new_lastline, true)
+			local lines = nvim_buf_get_lines(buf, firstline, new_lastline, false)
 			highlight_buffer(buf, ns, lines, firstline, BUFFER_OPTIONS[buf])
 		end;
 		on_detach = function()
@@ -644,6 +721,7 @@ end
 return {
 	DEFAULT_NAMESPACE = DEFAULT_NAMESPACE;
 	setup = setup;
+	is_buffer_attached = is_buffer_attached;
 	attach_to_buffer = attach_to_buffer;
 	detach_from_buffer = detach_from_buffer;
 	highlight_buffer = highlight_buffer;
