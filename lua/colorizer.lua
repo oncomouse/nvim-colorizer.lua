@@ -638,6 +638,7 @@ end
 -- USER FACING FUNCTIONALITY
 ---
 
+local EXCLUDE_REGEX
 local SETUP_SETTINGS = {
 	exclusions = {},
 	default_options = DEFAULT_OPTIONS,
@@ -710,7 +711,11 @@ end
 
 function M.setup_hook()
 	local filetype = nvim.bo.filetype
-	if SETUP_SETTINGS.exclusions[filetype] then
+	
+	if EXCLUDE_REGEX == nil then
+		EXCLUDE_REGEX = vim.regex([[\(]] .. vim.fn.join(vim.tbl_keys(SETUP_SETTINGS.exclusions), [[\|]]) .. [[\)]])
+	end
+	if EXCLUDE_REGEX:match_str(filetype) then
 		return
 	end
 	local options = FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
