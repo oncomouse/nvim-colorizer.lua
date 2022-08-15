@@ -713,7 +713,7 @@ function M.detach_from_buffer(buf, ns)
 	BUFFER_OPTIONS[buf] = nil
 end
 
-function M.COLORIZER_SETUP_HOOK()
+function M.setup_hook()
 	local filetype = nvim.bo.filetype
 	if SETUP_SETTINGS.exclusions[filetype] then
 		return
@@ -758,7 +758,7 @@ function M.setup(filetypes, user_default_options)
 		nvim.create_autocmd("FileType", {
 			pattern = "*",
 			group = augroup,
-			callback = M.COLORIZER_SETUP_HOOK,
+			callback = M.setup_hook,
 		})
 	else
 		for k, v in pairs(filetypes) do
@@ -787,7 +787,7 @@ function M.setup(filetypes, user_default_options)
 				nvim.create_autocmd("FileType", {
 					pattern = "*",
 					group = augroup,
-					callback = M.COLORIZER_SETUP_HOOK,
+					callback = M.setup_hook,
 				})
 			end
 		end
