@@ -5,11 +5,6 @@ local Trie = require("colorizer/trie")
 local bit = require("bit")
 local ffi = require("ffi")
 
-local nvim_buf_add_highlight = vim.api.nvim_buf_add_highlight
-local nvim_buf_clear_namespace = vim.api.nvim_buf_clear_namespace
-local nvim_buf_get_lines = vim.api.nvim_buf_get_lines
-local nvim_get_current_buf = vim.api.nvim_get_current_buf
-local nvim_buf_set_virtual_text = vim.api.nvim_buf_set_virtual_text
 local band, lshift, bor, tohex = bit.band, bit.lshift, bit.bor, bit.tohex
 local rshift = bit.rshift
 local floor, min, max = math.floor, math.min, math.max
@@ -586,14 +581,14 @@ local function add_highlight(options, buf, ns, data)
 	for linenr, hls in pairs(data) do
 		if vim.tbl_contains({ "foreground", "background" }, options.mode) then
 			for _, hl in ipairs(hls) do
-				nvim_buf_add_highlight(buf, ns, hl.name, linenr, hl.range[1], hl.range[2])
+				nvim.buf_add_highlight(buf, ns, hl.name, linenr, hl.range[1], hl.range[2])
 			end
 		elseif options.mode == "virtualtext" then
 			local chunks = {}
 			for _, hl in ipairs(hls) do
 				table.insert(chunks, { options.virtualtext, hl.name })
 			end
-			nvim_buf_set_virtual_text(buf, ns, linenr, chunks, {})
+			nvim.buf_set_virtual_text(buf, ns, linenr, chunks, {})
 		end
 	end
 end
@@ -653,11 +648,11 @@ local FILETYPE_OPTIONS = {}
 local function rehighlight_buffer(buf, options)
 	local ns = M.DEFAULT_NAMESPACE
 	if buf == 0 or buf == nil then
-		buf = nvim_get_current_buf()
+		buf = nvim.get_current_buf()
 	end
 	assert(options, "Options not found")
-	nvim_buf_clear_namespace(buf, ns, 0, -1)
-	local lines = nvim_buf_get_lines(buf, 0, -1, true)
+	nvim.buf_clear_namespace(buf, ns, 0, -1)
+	local lines = nvim.buf_get_lines(buf, 0, -1, true)
 	M.highlight_buffer(buf, ns, lines, 0, options)
 end
 
@@ -672,7 +667,7 @@ end
 -- @see setup
 function M.attach_to_buffer(buf, options)
 	if buf == 0 or buf == nil then
-		buf = nvim_get_current_buf()
+		buf = nvim.get_current_buf()
 	end
 	local already_attached = BUFFER_OPTIONS[buf] ~= nil
 	local ns = M.DEFAULT_NAMESPACE
@@ -691,8 +686,8 @@ function M.attach_to_buffer(buf, options)
 			if not BUFFER_OPTIONS[bff] then
 				return true
 			end
-			nvim_buf_clear_namespace(bff, ns, firstline, new_lastline)
-			local lines = nvim_buf_get_lines(bff, firstline, new_lastline, false)
+			nvim.buf_clear_namespace(bff, ns, firstline, new_lastline)
+			local lines = nvim.buf_get_lines(bff, firstline, new_lastline, false)
 			M.highlight_buffer(bff, ns, lines, firstline, BUFFER_OPTIONS[bff])
 		end,
 		on_detach = function()
@@ -707,9 +702,9 @@ end
 -- @tparam[opt=DEFAULT_NAMESPACE] integer ns the namespace id.
 function M.detach_from_buffer(buf, ns)
 	if buf == 0 or buf == nil then
-		buf = nvim_get_current_buf()
+		buf = nvim.get_current_buf()
 	end
-	nvim_buf_clear_namespace(buf, ns or M.DEFAULT_NAMESPACE, 0, -1)
+	nvim.buf_clear_namespace(buf, ns or M.DEFAULT_NAMESPACE, 0, -1)
 	BUFFER_OPTIONS[buf] = nil
 end
 
@@ -719,7 +714,7 @@ function M.setup_hook()
 		return
 	end
 	local options = FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
-	M.attach_to_buffer(nvim_get_current_buf(), options)
+	M.attach_to_buffer(nvim.get_current_buf(), options)
 end
 
 --- Easy to use function if you want the full setup without fine grained control.
@@ -805,7 +800,7 @@ end
 -- @tparam[opt=0|nil] integer buf A value of 0 or nil implies the current buffer.
 function M.get_buffer_options(buf)
 	if buf == 0 or buf == nil then
-		buf = nvim_get_current_buf()
+		buf = nvim.get_current_buf()
 	end
 	if BUFFER_OPTIONS[buf] then
 		return merge({}, BUFFER_OPTIONS[buf])
@@ -816,7 +811,7 @@ end
 -- @tparam[opt=0|nil] integer buf A value of 0 or nil implies the current buffer.
 function M.is_buffer_attached(buf)
 	if buf == 0 or buf == nil then
-		buf = nvim_get_current_buf()
+		buf = nvim.get_current_buf()
 	end
 	return BUFFER_OPTIONS[buf] ~= nil
 end
