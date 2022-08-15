@@ -15,7 +15,7 @@ local rshift = bit.rshift
 local floor, min, max = math.floor, math.min, math.max
 
 local M = {
-	parsers = {}
+	parsers = {},
 }
 
 local COLOR_MAP
@@ -753,10 +753,13 @@ function M.setup(filetypes, user_default_options)
 	}
 	-- Initialize this AFTER setting COLOR_NAME_SETTINGS
 	initialize_trie()
-	nvim.ex.augroup("ColorizerSetup")
-	nvim.ex.autocmd_()
+	local augroup = nvim.create_augroup("ColorizerSetup", { clear = true })
 	if not filetypes then
-		nvim.ex.autocmd("FileType * lua require('colorizer').COLORIZER_SETUP_HOOK()")
+		nvim.create_autocmd("FileType", {
+			pattern = "*",
+			group = augroup,
+			callback = M.COLORIZER_SETUP_HOOK,
+		})
 	else
 		for k, v in pairs(filetypes) do
 			local filetype
@@ -781,11 +784,14 @@ function M.setup(filetypes, user_default_options)
 			else
 				FILETYPE_OPTIONS[filetype] = options
 				-- TODO What's the right mode for this? BufEnter?
-				nvim.ex.autocmd("FileType", filetype, "lua require('colorizer').COLORIZER_SETUP_HOOK()")
+				nvim.create_autocmd("FileType", {
+					pattern = "*",
+					group = augroup,
+					callback = M.COLORIZER_SETUP_HOOK,
+				})
 			end
 		end
 	end
-	nvim.ex.augroup("END")
 end
 
 --- Reload all of the currently active highlighted buffers.
