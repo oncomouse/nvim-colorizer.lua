@@ -14,6 +14,10 @@ local band, lshift, bor, tohex = bit.band, bit.lshift, bit.bor, bit.tohex
 local rshift = bit.rshift
 local floor, min, max = math.floor, math.min, math.max
 
+local M = {
+	parsers = {}
+}
+
 local COLOR_MAP
 local COLOR_TRIE
 local COLOR_NAME_MINLEN, COLOR_NAME_MAXLEN
@@ -185,7 +189,7 @@ local function hsl_to_rgb(h, s, l)
 	return 255 * hue_to_rgb(p, q, h + 1 / 3), 255 * hue_to_rgb(p, q, h), 255 * hue_to_rgb(p, q, h - 1 / 3)
 end
 
-local function color_name_parser(line, i)
+function M.parsers.color_name_parser(line, i)
 	if i > 1 and byte_is_alphanumeric(line:byte(i - 1)) then
 		return
 	end
@@ -206,7 +210,7 @@ local function color_name_parser(line, i)
 end
 
 local b_hash = string.byte("#")
-local function rgb_hex_parser(line, i, minlen, maxlen)
+function M.parsers.rgb_hex_parser(line, i, minlen, maxlen)
 	if i > 1 and byte_is_alphanumeric(line:byte(i - 1)) then
 		return
 	end
@@ -288,13 +292,13 @@ end
 -- TODO consider removing the regexes here
 -- TODO this might not be the best approach to alpha channel.
 -- Things like pumblend might be useful here.
-local css_fn = {}
 do
+	M.parsers.css_fn = {}
 	local CSS_RGB_FN_MINIMUM_LENGTH = #"rgb(0,0,0)" - 1
 	local CSS_RGBA_FN_MINIMUM_LENGTH = #"rgba(0,0,0,0)" - 1
 	local CSS_HSL_FN_MINIMUM_LENGTH = #"hsl(0,0%,0%)" - 1
 	local CSS_HSLA_FN_MINIMUM_LENGTH = #"hsla(0,0%,0%,0)" - 1
-	function css_fn.rgb(line, i)
+	function M.parsers.css_fn.rgb(line, i)
 		if #line < i + CSS_RGB_FN_MINIMUM_LENGTH then
 			return
 		end
@@ -317,7 +321,7 @@ do
 		local rgb_hex = tohex(bor(lshift(r, 16), lshift(g, 8), b), 6)
 		return match_end - 1, rgb_hex
 	end
-	function css_fn.hsl(line, i)
+	function M.parsers.css_fn.hsl(line, i)
 		if #line < i + CSS_HSL_FN_MINIMUM_LENGTH then
 			return
 		end
@@ -344,7 +348,7 @@ do
 		local rgb_hex = tohex(bor(lshift(floor(r), 16), lshift(floor(g), 8), floor(b)), 6)
 		return match_end - 1, rgb_hex
 	end
-	function css_fn.rgba(line, i)
+	function M.parsers.css_fn.rgba(line, i)
 		if #line < i + CSS_RGBA_FN_MINIMUM_LENGTH then
 			return
 		end
@@ -373,7 +377,7 @@ do
 		local rgb_hex = tohex(bor(lshift(floor(r * a), 16), lshift(floor(g * a), 8), floor(b * a)), 6)
 		return match_end - 1, rgb_hex
 	end
-	function css_fn.hsla(line, i)
+	function M.parsers.css_fn.hsla(line, i)
 		if #line < i + CSS_HSLA_FN_MINIMUM_LENGTH then
 			return
 		end
@@ -419,32 +423,31 @@ do
 	end
 end
 
-local css_function_parser, rgb_function_parser, hsl_function_parser
 do
 	local CSS_FUNCTION_TRIE = Trie({ "rgb", "rgba", "hsl", "hsla" })
 	local RGB_FUNCTION_TRIE = Trie({ "rgb", "rgba" })
 	local HSL_FUNCTION_TRIE = Trie({ "hsl", "hsla" })
-	css_function_parser = function(line, i)
+	M.parsers.css_function_parser = function(line, i)
 		local prefix = CSS_FUNCTION_TRIE:longest_prefix(line, i)
 		if prefix then
-			return css_fn[prefix](line, i)
+			return M.parsers.css_fn[prefix](line, i)
 		end
 	end
-	rgb_function_parser = function(line, i)
+	M.parsers.rgb_function_parser = function(line, i)
 		local prefix = RGB_FUNCTION_TRIE:longest_prefix(line, i)
 		if prefix then
-			return css_fn[prefix](line, i)
+			return M.parsers.css_fn[prefix](line, i)
 		end
 	end
-	hsl_function_parser = function(line, i)
+	M.parsers.hsl_function_parser = function(line, i)
 		local prefix = HSL_FUNCTION_TRIE:longest_prefix(line, i)
 		if prefix then
-			return css_fn[prefix](line, i)
+			return M.parsers.css_fn[prefix](line, i)
 		end
 	end
 end
 
-local function compile_matcher(matchers)
+function M.parsers.compile(matchers)
 	local parse_fn = matchers[1]
 	for j = 2, #matchers do
 		local old_parse_fn = parse_fn
@@ -464,7 +467,7 @@ end
 -- The name is "terminal_highlight"
 -- @see highlight_buffer
 -- @see attach_to_buffer
-local DEFAULT_NAMESPACE = nvim.create_namespace("colorizer")
+M.DEFAULT_NAMESPACE = nvim.create_namespace("colorizer")
 local HIGHLIGHT_NAME_PREFIX = "colorizer"
 local HIGHLIGHT_MODE_NAMES = {
 	background = "mb",
@@ -543,7 +546,7 @@ local function make_matcher(options)
 
 	local loop_matchers = {}
 	if enable_names then
-		table.insert(loop_matchers, color_name_parser)
+		table.insert(loop_matchers, M.parsers.color_name_parser)
 	end
 	if enable_0x then
 		table.insert(loop_matchers, rgb_0x_parser)
@@ -559,7 +562,7 @@ local function make_matcher(options)
 		end
 		if minlen then
 			table.insert(loop_matchers, function(line, i)
-				local length, rgb_hex = rgb_hex_parser(line, i, minlen, maxlen)
+				local length, rgb_hex = M.parsers.rgb_hex_parser(line, i, minlen, maxlen)
 				if length and valid_lengths[length - 1] then
 					return length, rgb_hex
 				end
@@ -568,13 +571,13 @@ local function make_matcher(options)
 	end
 
 	if enable_rgb and enable_hsl then
-		table.insert(loop_matchers, css_function_parser)
+		table.insert(loop_matchers, M.parsers.css_function_parser)
 	elseif enable_rgb then
-		table.insert(loop_matchers, rgb_function_parser)
+		table.insert(loop_matchers, M.parsers.rgb_function_parser)
 	elseif enable_hsl then
-		table.insert(loop_matchers, hsl_function_parser)
+		table.insert(loop_matchers, M.parsers.hsl_function_parser)
 	end
-	loop_parse_fn = compile_matcher(loop_matchers)
+	loop_parse_fn = M.parsers.compile(loop_matchers)
 	MATCHER_CACHE[matcher_key] = loop_parse_fn
 	return loop_parse_fn
 end
@@ -606,13 +609,13 @@ buffer `buf` and attach it to the namespace `ns`.
 @param options Configuration options as described in `setup`
 @see setup
 ]]
-local function highlight_buffer(buf, ns, lines, line_start, options)
+function M.highlight_buffer(buf, ns, lines, line_start, options)
 	-- TODO do I have to put this here?
 	initialize_trie()
-	ns = ns or DEFAULT_NAMESPACE
+	ns = ns or M.DEFAULT_NAMESPACE
 	local loop_parse_fn = make_matcher(options)
 	if options.custom_matcher then
-		loop_parse_fn = compile_matcher({ loop_parse_fn, options.custom_matcher })
+		loop_parse_fn = M.parsers.compile({ loop_parse_fn, options.custom_matcher })
 	end
 	local data = {}
 	local mode = options.mode == "background" and { mode = "background" } or { mode = "foreground" }
@@ -648,14 +651,14 @@ local BUFFER_OPTIONS = {}
 local FILETYPE_OPTIONS = {}
 
 local function rehighlight_buffer(buf, options)
-	local ns = DEFAULT_NAMESPACE
+	local ns = M.DEFAULT_NAMESPACE
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
 	assert(options, "Options not found")
 	nvim_buf_clear_namespace(buf, ns, 0, -1)
 	local lines = nvim_buf_get_lines(buf, 0, -1, true)
-	highlight_buffer(buf, ns, lines, 0, options)
+	M.highlight_buffer(buf, ns, lines, 0, options)
 end
 
 local function new_buffer_options(buf)
@@ -667,12 +670,12 @@ end
 -- @tparam[opt=0|nil] integer buf A value of 0 implies the current buffer.
 -- @param[opt] options Configuration options as described in `setup`
 -- @see setup
-local function attach_to_buffer(buf, options)
+function M.attach_to_buffer(buf, options)
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
 	local already_attached = BUFFER_OPTIONS[buf] ~= nil
-	local ns = DEFAULT_NAMESPACE
+	local ns = M.DEFAULT_NAMESPACE
 	if not options then
 		options = new_buffer_options(buf)
 	end
@@ -690,7 +693,7 @@ local function attach_to_buffer(buf, options)
 			end
 			nvim_buf_clear_namespace(bff, ns, firstline, new_lastline)
 			local lines = nvim_buf_get_lines(bff, firstline, new_lastline, false)
-			highlight_buffer(bff, ns, lines, firstline, BUFFER_OPTIONS[bff])
+			M.highlight_buffer(bff, ns, lines, firstline, BUFFER_OPTIONS[bff])
 		end,
 		on_detach = function()
 			BUFFER_OPTIONS[buf] = nil
@@ -702,11 +705,11 @@ end
 --- Stop highlighting the current buffer.
 -- @tparam[opt=0|nil] integer buf A value of 0 or nil implies the current buffer.
 -- @tparam[opt=DEFAULT_NAMESPACE] integer ns the namespace id.
-local function detach_from_buffer(buf, ns)
+function M.detach_from_buffer(buf, ns)
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
-	nvim_buf_clear_namespace(buf, ns or DEFAULT_NAMESPACE, 0, -1)
+	nvim_buf_clear_namespace(buf, ns or M.DEFAULT_NAMESPACE, 0, -1)
 	BUFFER_OPTIONS[buf] = nil
 end
 
@@ -729,7 +732,7 @@ end
 -- @param[opt={'*'}] filetypes A table/array of filetypes to selectively enable and/or customize. By default, enables all filetypes.
 -- @tparam[opt] {[string]=string} default_options Default options to apply for the filetypes enable.
 -- @usage require'colorizer'.setup()
-local function setup(filetypes, user_default_options)
+function M.setup(filetypes, user_default_options)
 	if not nvim.o.termguicolors then
 		nvim.err_writeln("&termguicolors must be set")
 		return
@@ -747,7 +750,7 @@ local function setup(filetypes, user_default_options)
 			return
 		end
 		local options = FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
-		attach_to_buffer(nvim_get_current_buf(), options)
+		M.attach_to_buffer(nvim_get_current_buf(), options)
 	end
 	nvim.ex.augroup("ColorizerSetup")
 	nvim.ex.autocmd_()
@@ -785,15 +788,15 @@ local function setup(filetypes, user_default_options)
 end
 
 --- Reload all of the currently active highlighted buffers.
-local function reload_all_buffers()
+function M.reload_all_buffers()
 	for buf, buffer_options in pairs(BUFFER_OPTIONS) do
-		attach_to_buffer(buf, buffer_options)
+		M.attach_to_buffer(buf, buffer_options)
 	end
 end
 
 --- Return the currently active buffer options.
 -- @tparam[opt=0|nil] integer buf A value of 0 or nil implies the current buffer.
-local function get_buffer_options(buf)
+function M.get_buffer_options(buf)
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
@@ -804,7 +807,7 @@ end
 
 --- Return the currently active buffer options.
 -- @tparam[opt=0|nil] integer buf A value of 0 or nil implies the current buffer.
-local function is_buffer_attached(buf)
+function M.is_buffer_attached(buf)
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
@@ -812,22 +815,4 @@ local function is_buffer_attached(buf)
 end
 
 --- @export
-return {
-	DEFAULT_NAMESPACE = DEFAULT_NAMESPACE,
-	setup = setup,
-	is_buffer_attached = is_buffer_attached,
-	attach_to_buffer = attach_to_buffer,
-	detach_from_buffer = detach_from_buffer,
-	highlight_buffer = highlight_buffer,
-	reload_all_buffers = reload_all_buffers,
-	get_buffer_options = get_buffer_options,
-	parsers = {
-		compile = compile_matcher,
-		color_name_parser = color_name_parser,
-		css_fn = css_fn,
-		css_function_parser = css_function_parser,
-		hsl_function_parser = hsl_function_parser,
-		rgb_function_parser = rgb_function_parser,
-		rgb_hex_parser = rgb_hex_parser,
-	},
-}
+return M
