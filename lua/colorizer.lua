@@ -9,9 +9,9 @@ local band, lshift, bor, tohex = bit.band, bit.lshift, bit.bor, bit.tohex
 local rshift = bit.rshift
 local floor, min, max = math.floor, math.min, math.max
 
-local M = {
-	parsers = {},
-}
+local M = {}
+M.parsers = {}
+M.parsers.css_fn = {}
 
 local COLOR_MAP
 local COLOR_TRIE
@@ -288,7 +288,6 @@ end
 -- TODO this might not be the best approach to alpha channel.
 -- Things like pumblend might be useful here.
 do
-	M.parsers.css_fn = {}
 	local CSS_RGB_FN_MINIMUM_LENGTH = #"rgb(0,0,0)" - 1
 	local CSS_RGBA_FN_MINIMUM_LENGTH = #"rgba(0,0,0,0)" - 1
 	local CSS_HSL_FN_MINIMUM_LENGTH = #"hsl(0,0%,0%)" - 1
@@ -407,10 +406,9 @@ do
 	end
 end
 
-local rgb_0x_parser
 do
 	local RGB_FUNCTION_TRIE = Trie({ "0x" })
-	rgb_0x_parser = function(line, i)
+	M.parsers.rgb_0x_parser = function(line, i)
 		local prefix = RGB_FUNCTION_TRIE:longest_prefix(line:sub(i))
 		if prefix then
 			return rgb_fn(line, i)
@@ -544,7 +542,7 @@ local function make_matcher(options)
 		table.insert(loop_matchers, M.parsers.color_name_parser)
 	end
 	if enable_0x then
-		table.insert(loop_matchers, rgb_0x_parser)
+		table.insert(loop_matchers, M.parsers.rgb_0x_parser)
 	end
 	do
 		local valid_lengths = { [3] = enable_RGB, [6] = enable_RRGGBB, [8] = enable_RRGGBBAA }
