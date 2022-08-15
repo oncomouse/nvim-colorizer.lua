@@ -713,6 +713,15 @@ function M.detach_from_buffer(buf, ns)
 	BUFFER_OPTIONS[buf] = nil
 end
 
+function M.COLORIZER_SETUP_HOOK()
+	local filetype = nvim.bo.filetype
+	if SETUP_SETTINGS.exclusions[filetype] then
+		return
+	end
+	local options = FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
+	M.attach_to_buffer(nvim_get_current_buf(), options)
+end
+
 --- Easy to use function if you want the full setup without fine grained control.
 -- Setup an autocmd which enables colorizing for the filetypes and options specified.
 --
@@ -744,18 +753,10 @@ function M.setup(filetypes, user_default_options)
 	}
 	-- Initialize this AFTER setting COLOR_NAME_SETTINGS
 	initialize_trie()
-	function COLORIZER_SETUP_HOOK()
-		local filetype = nvim.bo.filetype
-		if SETUP_SETTINGS.exclusions[filetype] then
-			return
-		end
-		local options = FILETYPE_OPTIONS[filetype] or SETUP_SETTINGS.default_options
-		M.attach_to_buffer(nvim_get_current_buf(), options)
-	end
 	nvim.ex.augroup("ColorizerSetup")
 	nvim.ex.autocmd_()
 	if not filetypes then
-		nvim.ex.autocmd("FileType * lua COLORIZER_SETUP_HOOK()")
+		nvim.ex.autocmd("FileType * lua require('colorizer').COLORIZER_SETUP_HOOK()")
 	else
 		for k, v in pairs(filetypes) do
 			local filetype
@@ -780,7 +781,7 @@ function M.setup(filetypes, user_default_options)
 			else
 				FILETYPE_OPTIONS[filetype] = options
 				-- TODO What's the right mode for this? BufEnter?
-				nvim.ex.autocmd("FileType", filetype, "lua COLORIZER_SETUP_HOOK()")
+				nvim.ex.autocmd("FileType", filetype, "lua require('colorizer').COLORIZER_SETUP_HOOK()")
 			end
 		end
 	end
