@@ -1,9 +1,8 @@
-local colorizer = require 'colorizer'
-local nvim = require 'colorizer/nvim'
+local colorizer = require("colorizer")
+local nvim = require("colorizer/nvim")
 
 local nvim_buf_get_lines = vim.api.nvim_buf_get_lines
 local nvim_get_current_buf = vim.api.nvim_get_current_buf
-
 
 local M = {}
 
@@ -21,11 +20,13 @@ local function variable_matcher(line, i)
 	end
 end
 
-local VALUE_PARSER = colorizer.parsers.compile {
-	function(line,i) return colorizer.parsers.rgb_hex_parser(line,i,3,8) end;
-	colorizer.parsers.color_name_parser;
-	colorizer.parsers.css_function_parser;
-}
+local VALUE_PARSER = colorizer.parsers.compile({
+	function(line, i)
+		return colorizer.parsers.rgb_hex_parser(line, i, 3, 8)
+	end,
+	colorizer.parsers.color_name_parser,
+	colorizer.parsers.css_function_parser,
+})
 
 local function update_from_lines(buf, buffer_variable_definitions, line_start, line_end)
 	local variable_definitions_changed = false
@@ -81,13 +82,12 @@ local function rehighlight_attached_buffers()
 	end
 end
 
-
 --- Attach to a buffer and continuously highlight changes.
 -- @tparam[opt=0|nil] integer buf A value of 0 implies the current buffer.
 -- @param[opt] options Configuration options as described in `setup`
 -- @see setup
 function M.attach_to_buffer(buf)
---function M.attach_to_buffer(buf, options)
+	--function M.attach_to_buffer(buf, options)
 	if buf == 0 or buf == nil then
 		buf = nvim_get_current_buf()
 	end
@@ -101,20 +101,25 @@ function M.attach_to_buffer(buf)
 
 	-- send_buffer: true doesn't actually do anything in Lua (yet)
 	nvim.buf_attach(buf, false, {
-		on_lines = function(event_type, buf, changed_tick, firstline, lastline, new_lastline)
+		on_lines = function(_, bff, _, firstline, _, new_lastline)
 			-- This is used to signal stopping the handler highlights
-			if not colorizer.is_buffer_attached(buf) then
+			if not colorizer.is_buffer_attached(bff) then
 				return true
 			end
-			local variable_definitions_changed = update_from_lines(buf, buffer_variable_definitions, firstline, new_lastline)
+			local variable_definitions_changed = update_from_lines(
+				bff,
+				buffer_variable_definitions,
+				firstline,
+				new_lastline
+			)
 			-- If the variable_definitions_changed then rehighlight all watched buffers.
 			if variable_definitions_changed then
 				rehighlight_attached_buffers()
 			end
-		end;
+		end,
 		on_detach = function()
 			LINE_DEFINITIONS[buf] = nil
-		end;
+		end,
 	})
 end
 
