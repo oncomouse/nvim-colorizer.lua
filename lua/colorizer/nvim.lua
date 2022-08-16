@@ -103,7 +103,6 @@ local window_options = {
 
 -- `nvim.$method(...)` redirects to `nvim.api.nvim_$method(...)`
 -- `nvim.fn.$method(...)` redirects to `vim.api.nvim_call_function($method, {...})`
--- TODO `nvim.ex.$command(...)` is approximately `:$command {...}.join(" ")`
 -- `nvim.print(...)` is approximately `echo vim.inspect(...)`
 -- `nvim.echo(...)` is approximately `echo table.concat({...}, '\n')`
 -- Both methods cache the inital lookup in the metatable, but there is a small overhead regardless.
@@ -139,21 +138,6 @@ return setmetatable({
 				end
 			elseif k == "nr" then
 				f = vim.api.nvim_get_current_buf
-			end
-			mt[k] = f
-			return f
-		end,
-	}),
-	ex = setmetatable({}, {
-		__index = function(self, k)
-			local mt = getmetatable(self)
-			local x = mt[k]
-			if x ~= nil then
-				return x
-			end
-			local command = k:gsub("_$", "!")
-			local f = function(...)
-				return vim.api.nvim_command(table.concat(vim.tbl_flatten({ command, ... }), " "))
 			end
 			mt[k] = f
 			return f
